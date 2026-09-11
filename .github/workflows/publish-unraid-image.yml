@@ -1,0 +1,71 @@
+# Build the Unraid agent image and push it to GHCR.
+#
+# Community Applications installs a container by pulling whatever the template's <Repository> names.
+# There is no build step anywhere in Unraid's docker template schema, so the image has to exist in a
+# registry before a listing can work at all. This is what puts it there.
+#
+# linux/amd64 only, deliberately. Unraid is an x86-64 operating system, and an arm64 tag would be a
+# claim that somebody had tested the agent on hardware nobody here owns.
+
+name: Publish the Unraid agent image
+
+on:
+  push:
+    # Any push to main, and any v* tag. Deliberately no `paths:` filter — path filters and tag
+    # pushes interact in ways that are easy to get wrong and hard to notice, and the cost of
+    # rebuilding after a README change is a few seconds of somebody else's compute.
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Sign in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          # Provided by Actions. No stored credential, nothing to rotate.
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Work out the tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/redkite-unraid
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./unraid
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          provenance: false
+
+      # The agent is a shell script, so "what is actually in the image" is a fair question and a
+      # cheap one to answer in the log. If this ever prints nothing, the COPY has gone wrong.
+      - name: Show what shipped
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${{ github.repository_owner }}/redkite-unraid:latest"
+          docker pull "$image"
+          echo "Agent size, in bytes:"
+          docker run --rm --entrypoint stat "$image" -c '%s %n' /usr/local/bin/redkite-unraid
