@@ -48,6 +48,14 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,format=short
+          # Without this the image is labelled NOASSERTION, which on this product would be a
+          # strange thing to publish: the licence is the reason the agent is public at all.
+          # PolyForm is not on the SPDX list, so SPDX's own form for referencing one that is not
+          # is a LicenseRef.
+          labels: |
+            org.opencontainers.image.licenses=LicenseRef-PolyForm-Shield-1.0.0
+            org.opencontainers.image.documentation=https://redkite.info/what-we-watch.html
+            org.opencontainers.image.vendor=Easy2pc Ltd
 
       - name: Build and push
         uses: docker/build-push-action@v6
